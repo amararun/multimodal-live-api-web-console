@@ -21,6 +21,12 @@ function CricketToolComponent() {
   useEffect(() => {
     setConfig({
       model: "models/gemini-2.0-flash-exp",
+      // Set all temperature and related parameters to 0.1 for maximum determinism
+      generationConfig: {
+        temperature: 0.1,
+        topP: 0.1,
+        topK: 1
+      },
       tools: [
         { functionDeclarations: [cricketAgentDeclaration] }
       ],
@@ -49,7 +55,15 @@ function CricketToolComponent() {
             body: JSON.stringify({ 
               question: question,
               overrideConfig: {
-                sessionId: sessionId.current
+                sessionId: sessionId.current,
+                // Set all temperature and sampling parameters to minimum for most deterministic responses
+                temperature: 0.1,
+                modelSettings: {
+                  temperature: 0.1,
+                  top_p: 0.1,
+                  frequency_penalty: 0.0,
+                  presence_penalty: 0.0
+                }
               }
             })
           });
