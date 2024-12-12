@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { createContext, FC, ReactNode, useContext } from "react";
+import { createContext, FC, ReactNode, useContext, useEffect, useRef } from "react";
 import { useLiveAPI, UseLiveAPIResults } from "../hooks/use-live-api";
 
 const LiveAPIContext = createContext<UseLiveAPIResults | undefined>(undefined);
@@ -31,6 +31,21 @@ export const LiveAPIProvider: FC<LiveAPIProviderProps> = ({
   children,
 }) => {
   const liveAPI = useLiveAPI({ url, apiKey });
+  const hasGreeted = useRef(false);
+
+  // Add greeting when connection is established
+  useEffect(() => {
+    if (liveAPI.connected && !hasGreeted.current) {
+      hasGreeted.current = true;
+      setTimeout(() => {
+        liveAPI.client.send([
+          {
+            text: "Hi! I'm CREX (pronounced as ceerex), your cricket data assistant. I can help you explore ODI cricket statistics. What would you like to know?"
+          }
+        ]);
+      }, 1000); // Small delay to ensure everything is ready
+    }
+  }, [liveAPI.connected, liveAPI.client]);
 
   return (
     <LiveAPIContext.Provider value={liveAPI}>
