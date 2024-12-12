@@ -19,6 +19,7 @@ import "./App.scss";
 import { LiveAPIProvider } from "./contexts/LiveAPIContext";
 import SidePanel from "./components/side-panel/SidePanel";
 import { Altair } from "./components/altair/Altair";
+import { CricketTool } from "./components/cricket-tool/CricketTool";
 import ControlTray from "./components/control-tray/ControlTray";
 import cn from "classnames";
 
@@ -46,6 +47,7 @@ function App() {
             <div className="main-app-area">
               {/* APP goes here */}
               <Altair />
+              <CricketTool />
               <video
                 className={cn("stream", {
                   hidden: !videoRef.current || !videoStream,
