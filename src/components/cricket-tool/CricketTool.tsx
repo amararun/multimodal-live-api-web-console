@@ -14,20 +14,35 @@ function generateSessionId(length = 8) {
 
 function CricketToolComponent() {
   const { client, setConfig } = useLiveAPIContext();
-  // Generate session ID once when component mounts
   const sessionId = useRef(generateSessionId());
 
   // Register the tool with Gemini
   useEffect(() => {
     setConfig({
       model: "models/gemini-2.0-flash-exp",
-      // Set all temperature and related parameters to 0.1 for maximum determinism
       generationConfig: {
         temperature: 0.1,
         topP: 0.1,
-        topK: 1
+        topK: 1,
+        responseModalities: "audio",
+        speechConfig: {
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } },
+        },
+      },
+      systemInstruction: {
+        parts: [
+          {
+            text: `You are my helpful cricket data assistant. Follow these rules strictly:
+1. When I ask ANY question about cricket or ODI data, ALWAYS use the query_cricket_data function first.
+2. Wait for the function's response before answering.
+3. Base your answer ONLY on the data returned by the function.
+4. If the function returns an error, inform me about it.
+5. Never make up cricket statistics - only use what the function provides.`
+          }
+        ]
       },
       tools: [
+        { googleSearch: {} },
         { functionDeclarations: [cricketAgentDeclaration] }
       ],
     });
@@ -35,66 +50,68 @@ function CricketToolComponent() {
 
   // Handle tool calls
   useEffect(() => {
-    const onToolCall = async (toolCall: ToolCall) => {
+    const onToolCall = (toolCall: ToolCall) => {
       console.log(`got cricket toolcall`, toolCall);
-      const fc = toolCall.functionCalls.find(
-        (fc) => fc.name === cricketAgentDeclaration.name
-      );
+      
+      if (toolCall.functionCalls.length) {
+        // Process each function call
+        Promise.all(
+          toolCall.functionCalls.map(async (fc) => {
+            if (fc.name === cricketAgentDeclaration.name) {
+              try {
+                const { question } = fc.args as { question: string };
+                const chatflowId = '5e61fc5e-a2d9-410d-b1a4-1519fa0c3b4d';
+                const baseUrl = 'https://flowise-coolify.hosting.tigzig.com';
+                
+                const response = await fetch(`${baseUrl}/api/v1/prediction/${chatflowId}`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({ 
+                    question: question,
+                    overrideConfig: {
+                      sessionId: sessionId.current,
+                      temperature: 0.1
+                    }
+                  })
+                });
 
-      if (fc) {
-        try {
-          const { question } = fc.args as { question: string };
-          const chatflowId = '5e61fc5e-a2d9-410d-b1a4-1519fa0c3b4d';
-          const baseUrl = 'https://flowise-coolify.hosting.tigzig.com';
-          
-          const response = await fetch(`${baseUrl}/api/v1/prediction/${chatflowId}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ 
-              question: question,
-              overrideConfig: {
-                sessionId: sessionId.current,
-                // Set all temperature and sampling parameters to minimum for most deterministic responses
-                temperature: 0.1,
-                modelSettings: {
-                  temperature: 0.1,
-                  top_p: 0.1,
-                  frequency_penalty: 0.0,
-                  presence_penalty: 0.0
+                if (!response.ok) {
+                  throw new Error('Cricket API call failed');
                 }
+
+                const data = await response.json();
+                console.log('Cricket API Response:', data);
+                
+                const responseText = data.text || data.message || JSON.stringify(data);
+                console.log('Sending response to Gemini:', responseText);
+
+                return {
+                  response: { output: responseText }, // Match Altair's format exactly
+                  id: fc.id
+                };
+              } catch (error) {
+                console.error('Cricket API call failed:', error);
+                return {
+                  response: { output: { error: 'Failed to fetch cricket data' } },
+                  id: fc.id
+                };
               }
-            })
-          });
-
-          if (!response.ok) {
-            throw new Error('Cricket API call failed');
-          }
-
-          const data = await response.json();
-          console.log('Cricket API Response:', data);
-          
-          // Send the response back to Gemini
-          client.sendToolResponse({
-            functionResponses: [{
-              response: { 
-                output: data.text || data.message,
-                data: data  // Including full response data in case it contains additional information
-              },
+            }
+            return {
+              response: { output: { error: 'Unknown function call' } },
               id: fc.id
-            }]
-          });
-        } catch (error) {
-          console.error('Cricket API call failed:', error);
-          // Send error response back to Gemini
-          client.sendToolResponse({
-            functionResponses: [{
-              response: { error: 'Failed to fetch cricket data' },
-              id: fc.id
-            }]
-          });
-        }
+            };
+          })
+        ).then(responses => {
+          // Send all responses back to Gemini with a small delay
+          setTimeout(() => {
+            client.sendToolResponse({
+              functionResponses: responses
+            });
+          }, 200);
+        });
       }
     };
 
@@ -104,7 +121,6 @@ function CricketToolComponent() {
     };
   }, [client]);
 
-  // This component doesn't render anything visible
   return null;
 }
 
