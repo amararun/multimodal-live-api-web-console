@@ -15,6 +15,7 @@ function generateSessionId(length = 8) {
 function CricketToolComponent() {
   const { client, setConfig } = useLiveAPIContext();
   const sessionId = useRef(generateSessionId());
+  const pendingResponses = useRef(new Set<string>());
 
   // Register the tool with Gemini
   useEffect(() => {
@@ -37,7 +38,8 @@ function CricketToolComponent() {
 2. Wait for the function's response before answering.
 3. Base your answer ONLY on the data returned by the function.
 4. If the function returns an error, inform me about it.
-5. Never make up cricket statistics - only use what the function provides.`
+5. Never make up cricket statistics - only use what the function provides.
+6. After receiving data from the function, always acknowledge it by saying "Based on the cricket data I received..." before providing the answer.`
           }
         ]
       },
@@ -54,10 +56,17 @@ function CricketToolComponent() {
       console.log(`got cricket toolcall`, toolCall);
       
       if (toolCall.functionCalls.length) {
-        // Process each function call
         Promise.all(
           toolCall.functionCalls.map(async (fc) => {
+            // Skip if we've already handled this function call
+            if (pendingResponses.current.has(fc.id)) {
+              return null;
+            }
+            
             if (fc.name === cricketAgentDeclaration.name) {
+              // Mark this function call as being processed
+              pendingResponses.current.add(fc.id);
+              
               try {
                 const { question } = fc.args as { question: string };
                 const chatflowId = '5e61fc5e-a2d9-410d-b1a4-1519fa0c3b4d';
@@ -83,34 +92,38 @@ function CricketToolComponent() {
 
                 const data = await response.json();
                 console.log('Cricket API Response:', data);
-                
-                const responseText = data.text || data.message || JSON.stringify(data);
-                console.log('Sending response to Gemini:', responseText);
+
+                // Remove from pending after processing
+                pendingResponses.current.delete(fc.id);
 
                 return {
-                  response: { output: responseText }, // Match Altair's format exactly
+                  response: { 
+                    output: data.text || data.message || JSON.stringify(data)
+                  },
                   id: fc.id
                 };
               } catch (error) {
                 console.error('Cricket API call failed:', error);
+                // Remove from pending after error
+                pendingResponses.current.delete(fc.id);
+                
                 return {
-                  response: { output: { error: 'Failed to fetch cricket data' } },
+                  response: { 
+                    output: 'Failed to fetch cricket data'
+                  },
                   id: fc.id
                 };
               }
             }
-            return {
-              response: { output: { error: 'Unknown function call' } },
-              id: fc.id
-            };
+            return null;
           })
         ).then(responses => {
-          // Send all responses back to Gemini with a small delay
-          setTimeout(() => {
+          const validResponses = responses.filter(r => r !== null);
+          if (validResponses.length > 0) {
             client.sendToolResponse({
-              functionResponses: responses
+              functionResponses: validResponses
             });
-          }, 200);
+          }
         });
       }
     };

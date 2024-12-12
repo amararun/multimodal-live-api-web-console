@@ -66,28 +66,29 @@ function AltairComponent() {
   useEffect(() => {
     const onToolCall = (toolCall: ToolCall) => {
       console.log(`got toolcall`, toolCall);
-      const fc = toolCall.functionCalls.find(
-        (fc) => fc.name === declaration.name,
+      
+      // Only process Altair-specific tool calls
+      const altairCalls = toolCall.functionCalls.filter(
+        (fc) => fc.name === declaration.name
       );
-      if (fc) {
-        const str = (fc.args as any).json_graph;
-        setJSONString(str);
-      }
-      // send data for the response of your tool call
-      // in this case Im just saying it was successful
-      if (toolCall.functionCalls.length) {
-        setTimeout(
-          () =>
-            client.sendToolResponse({
-              functionResponses: toolCall.functionCalls.map((fc) => ({
-                response: { output: { sucess: true } },
-                id: fc.id,
-              })),
-            }),
-          200,
-        );
+      
+      if (altairCalls.length > 0) {
+        // Process Altair calls
+        altairCalls.forEach(fc => {
+          const str = (fc.args as any).json_graph;
+          setJSONString(str);
+        });
+
+        // Only send response for Altair calls
+        client.sendToolResponse({
+          functionResponses: altairCalls.map((fc) => ({
+            response: { output: { success: true } },
+            id: fc.id,
+          })),
+        });
       }
     };
+    
     client.on("toolcall", onToolCall);
     return () => {
       client.off("toolcall", onToolCall);
